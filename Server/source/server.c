@@ -87,9 +87,22 @@ void *factorsParentThread(void *args){
         }
     }
 
-    printf("factors found for input %d: %d\n", number, ShmPtr->slots[slot]);
+    printf("Server, thread %d: Factors found for input %d: %d\n", slot, number, ShmPtr->slots[slot]);
     
+    sleep(5);
     ShmPtr->serverflag[slot] = 1;
+
+    while (ShmPtr->serverflag[slot] == 1);
+
+    pthread_mutex_lock(&assigned_slots_mutex[slot]);
+    assigned_slots[slot] = 0;
+    // ShmPtr->numbers[slot] = 0;
+    ShmPtr->slots[slot] = 0;
+    pthread_mutex_unlock(&assigned_slots_mutex[slot]);
+    
+    pthread_mutex_lock(&(ShmPtr->processing_mutex));
+    ShmPtr->processing -= 1;
+    pthread_mutex_unlock(&(ShmPtr->processing_mutex));
     return NULL;
 }
 
@@ -142,8 +155,10 @@ int main(int argc, char **argv){
         ShmPtr->processing += 1;
         pthread_mutex_unlock(&(ShmPtr->processing_mutex));
 
+        pthread_mutex_lock(&(ShmPtr->client_mutex));
         uint32_t number = ShmPtr->number;
         ShmPtr->clientflag = 0;
+        pthread_mutex_unlock(&(ShmPtr->client_mutex));
     
         int slot;
         for (int i = 0; i < 10; i++){
@@ -159,10 +174,9 @@ int main(int argc, char **argv){
 
         pthread_mutex_lock(&assigned_slots_mutex[slot]);
         assigned_slots[slot] = 1;
+        ShmPtr->numbers[slot] = number;
         pthread_mutex_unlock(&assigned_slots_mutex[slot]);
-
-        printf("Server: Got %d from client, Assigned to thread %d\n", number, slot);
-
+    
         struct thread_args *args = malloc(sizeof(struct thread_args));
         args->number = number;
         args->slot = slot;
@@ -170,14 +184,6 @@ int main(int argc, char **argv){
         if (pthread_create(&threads[slot], NULL, factorsParentThread, args)){
             error("thread create error");
         }
-
-        if (pthread_join(threads[slot], NULL)){
-            error("thread join error");
-        }
-
-        // pthread_mutex_lock(&assigned_slots_mutex[slot]);
-        // assigned_slots[slot] = 0;
-        // pthread_mutex_unlock(&assigned_slots_mutex[slot]);
     }
 
     cleanup();

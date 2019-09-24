@@ -7,11 +7,12 @@
 
 struct Memory {
     uint8_t clientflag;
+    pthread_mutex_t client_mutex;
     int processing;
     pthread_mutex_t processing_mutex;
     uint8_t serverflag[10];
     uint32_t number;
-    uint32_t numbers;
+    uint32_t numbers[10];
     uint64_t timestamp;
     uint64_t timestamps[10];
     uint32_t slots[10];
