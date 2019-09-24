@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <pthread.h>
 
 #define EMPTY 0
 #define FILLED 1
@@ -12,4 +13,5 @@ struct Memory {
     uint64_t timestamp;
     uint32_t slots[10];
     uint64_t timestamps[10];
+    pthread_mutex_t mutex_slots[10];
 };

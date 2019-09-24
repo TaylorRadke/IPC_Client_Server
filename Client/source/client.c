@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <semaphore.h>
 
 #include "shmdef.h"
 
