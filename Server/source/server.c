@@ -107,15 +107,15 @@ void *factorsParentThread(void *args){
 }
 
 void cleanup() {
-    printf("Removing Mutexes ... ");
+    printf("Destroying Mutexes... ");
     for (int i = 0; i < 10; i++)
         pthread_mutex_destroy(&(ShmPtr->mutex_slots[i]));
     printf("complete\n");
     
-    printf("Detaching shared memory ...");
+    printf("Detaching shared memory...");
     shmdt((void *)ShmPtr);
     printf(" complete\n");
-    printf("Deleting shared memory  ...");
+    printf("Deleting shared memory...");
     shmctl(ShmID, IPC_RMID, NULL);
     printf(" complete\n");
 }
@@ -185,6 +185,5 @@ int main(int argc, char **argv){
             error("thread create error");
         }
     }
-
     cleanup();
 }

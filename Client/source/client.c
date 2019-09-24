@@ -38,6 +38,7 @@ void *listenStdin(void *args){
         }
 
         if (ShmPtr->processing < 10){
+            while (ShmPtr->clientflag == 1);
             pthread_mutex_lock(&(ShmPtr->client_mutex));
             ShmPtr->number = atoi(input);
             ShmPtr->clientflag = 1;
