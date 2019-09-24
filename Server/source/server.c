@@ -18,25 +18,29 @@ struct Memory *ShmPtr;
 
 struct thread_args {
     uint32_t number;
-    uint32_t *slot;
-    int slot_index;
+    int slot;
 };
 
 int ShmID;
+int assigned_slots[10] = {0};
+pthread_mutex_t assigned_slots_mutex[10];
 
 void INTHandler(int);
 void cleanup(void);
 void listen(struct Memory *);
 void *factorise(void *);
 
+void error(char *msg){
+    printf("*** %s (server) %s ***\n", msg, strerror(errno));
+    exit(1);
+}
+
 void *factorise(void *args){
 
     struct thread_args *t_args = args;
     uint32_t number = t_args->number;
-    uint32_t *slot = t_args->slot;
-    int slot_index = t_args->slot_index;
+    int slot_index = t_args->slot;
 
-    printf("Factorising %d: ", number);
     int factor = 2;
     int factors = 0;
 
@@ -57,9 +61,36 @@ void *factorise(void *args){
 }
 
 void INTHandler(int sig){
-    printf("\rReceived Interrupt signal, deleting shared memory\n");
+    printf("\rReceived Interrupt signal, cleaning up before terminating\n");
     cleanup();
     exit(0);
+}
+
+void *factorsParentThread(void *args){
+    struct thread_args *t_args = args;
+    uint32_t number = t_args->number;
+    int slot = t_args->slot;
+    pthread_t threads[32];
+
+    for (int i = 0; i < 32 && pow(2,i) <= number; i++){
+        struct thread_args *f_args = malloc(sizeof(struct thread_args));
+
+        f_args->number = number >> i;
+        f_args->slot = slot;
+
+        if (pthread_create(&threads[i], NULL, factorise, f_args)){
+            error("thread create error");
+        }
+
+        if (pthread_join(threads[i], NULL)){
+            error("thread join error");
+        }
+    }
+
+    printf("factors found for input %d: %d\n", number, ShmPtr->slots[slot]);
+    
+    ShmPtr->serverflag[slot] = 1;
+    return NULL;
 }
 
 void cleanup() {
@@ -78,65 +109,75 @@ void cleanup() {
 
 int main(int argc, char **argv){
     key_t ShmKey;
+    pthread_t factor_threads[10][32];
+    pthread_t threads[10];
+
+    signal(SIGINT, INTHandler);
     
+
     ShmKey = ftok("../../", 'x');
     ShmID = shmget(ShmKey, sizeof(struct Memory), IPC_CREAT | 0666);
 
     if (ShmID < 0){
-        printf("*** shmget error (server) : %s ***\n", strerror(errno));
-        exit(1);
+        error("shmget error");
     }
 
     ShmPtr = (struct Memory *) shmat(ShmID, NULL, 0);
     if ((int) ShmPtr == -1){
-        printf("*** shmat error (server) ***\n");
-        exit(1);
+        error("shmat error");
     }
-    
-    signal(SIGINT, INTHandler);
 
-    pthread_t threads[10][32];
+    pthread_mutex_init(&(ShmPtr->processing_mutex), NULL);
+    ShmPtr->processing = 0;
 
     for (int i = 0; i < 10; i++){
-        pthread_mutex_init(&(ShmPtr->mutex_slots[i], NULL));
+        pthread_mutex_init(&(ShmPtr->mutex_slots[i]), NULL);
+        pthread_mutex_init(&assigned_slots_mutex[i], NULL);
     }
 
     while (1){
         while (ShmPtr->clientflag == 0);
         
+        pthread_mutex_lock(&(ShmPtr->processing_mutex));
+        ShmPtr->processing += 1;
+        pthread_mutex_unlock(&(ShmPtr->processing_mutex));
+
         uint32_t number = ShmPtr->number;
         ShmPtr->clientflag = 0;
-        printf("Server: Got %d from client\n", number);
+    
         int slot;
-
-
         for (int i = 0; i < 10; i++){
-            if (ShmPtr->slots[i] == 0){
+            pthread_mutex_lock(&assigned_slots_mutex[i]);
+            int slot_value = assigned_slots[i];
+            pthread_mutex_unlock(&assigned_slots_mutex[i]);
+
+            if (slot_value == 0){
                 slot = i;
                 break;
             }
         }
-        
-        for (int i = 0; i < 32 && pow(2,i) <= number; i++){
-            struct thread_args *args = malloc(sizeof(struct thread_args));
 
-            args->number = number >> i;
-            args->slot = &(ShmPtr->slots[i]);
-            args->slot_index = slot;
+        pthread_mutex_lock(&assigned_slots_mutex[slot]);
+        assigned_slots[slot] = 1;
+        pthread_mutex_unlock(&assigned_slots_mutex[slot]);
 
-            if (pthread_create(&threads[slot][i], NULL, factorise, args)){
-                printf("*** thread create error (server) : %s ***\n", strerror(errno));
-                exit(1);
-            }
+        printf("Server: Got %d from client, Assigned to thread %d\n", number, slot);
 
-            if (pthread_join( threads[slot][i], NULL)){
-                printf("*** thread join error (server) : %s ***\n", strerror(errno));
-                exit(1);
-            }
+        struct thread_args *args = malloc(sizeof(struct thread_args));
+        args->number = number;
+        args->slot = slot;
+
+        if (pthread_create(&threads[slot], NULL, factorsParentThread, args)){
+            error("thread create error");
         }
-        
 
-        printf("factors found for input %d: %d\n", number, ShmPtr->slots[slot]);
+        if (pthread_join(threads[slot], NULL)){
+            error("thread join error");
+        }
+
+        // pthread_mutex_lock(&assigned_slots_mutex[slot]);
+        // assigned_slots[slot] = 0;
+        // pthread_mutex_unlock(&assigned_slots_mutex[slot]);
     }
 
     cleanup();

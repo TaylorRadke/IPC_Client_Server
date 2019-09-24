@@ -23,11 +23,15 @@ void listen(struct Memory *ShmPtr){
         char input[100];
         scanf("%s", input);
 
-        if (ShmPtr->clientflag != 0){
-            while (ShmPtr->clientflag != 0);
+        if (ShmPtr->processing < 10){
+            if (ShmPtr->clientflag != 0){
+                while (ShmPtr->clientflag != 0);
+            }
+            ShmPtr->number = atoi(input);
+            ShmPtr->clientflag = 1;
+        } else {
+            printf("Warning: Server is currently busy\n");
         }
-        ShmPtr->number = atoi(input);
-        ShmPtr->clientflag = 1;
     }
 }
 
