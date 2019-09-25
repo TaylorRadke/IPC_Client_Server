@@ -53,10 +53,10 @@ void *listenShm(void *args){
     while (1) {
         for (int i = 0; i < 10; i++){
             if (ShmPtr->serverflag[i] == 1){
-                uint32_t slot_value = ShmPtr->slots[i];
-                ShmPtr->slots[i] = 0;
-                printf("\rClient: Server calculated %d factors for input %d\n", slot_value, ShmPtr->numbers[i]);
+                pthread_mutex_lock(&(ShmPtr->mutex_slots[i]));
+                printf("\rClient: Server got factor %d for input %d\n", ShmPtr->slots[i], ShmPtr->numbers[i]);
                 ShmPtr->serverflag[i] = 0;
+                pthread_mutex_unlock(&(ShmPtr->mutex_slots[i]));
             }
         }
     }

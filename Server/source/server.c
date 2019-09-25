@@ -19,6 +19,7 @@ struct Memory *ShmPtr;
 struct thread_args {
     uint32_t number;
     int slot;
+    uint32_t factor;
 };
 
 int ShmID;
@@ -35,28 +36,32 @@ void error(char *msg){
     exit(1);
 }
 
+void write_factor(int slot, uint32_t factor){
+    while (ShmPtr->serverflag[slot] != 0);
+    pthread_mutex_lock(&(ShmPtr->mutex_slots[slot]));
+    ShmPtr->slots[slot] = factor;
+    ShmPtr->serverflag[slot] = 1;
+    pthread_mutex_unlock(&(ShmPtr->mutex_slots[slot]));
+}
+
 void *factorise(void *args){
 
     struct thread_args *t_args = args;
     uint32_t number = t_args->number;
     int slot_index = t_args->slot;
+    uint32_t factor = t_args->factor;
+    
+    uint32_t o_number = number;
 
-    int factor = 2;
-    int factors = 0;
-
-    while (number > 1 && factor <= number){
+    while (number > factor && number > 1 && factor > 1){
         if (number % factor == 0){
             number /= factor;
-            factors += 1;
+            write_factor(slot_index, factor);
+            printf("Thread %d, number %d: Found factor %d\n", slot_index, o_number, factor);
         } else {
             factor += 1;
         }
     }
-
-    pthread_mutex_lock(&(ShmPtr->mutex_slots[slot_index]));
-    ShmPtr->slots[slot_index] += factors;
-    pthread_mutex_unlock(&(ShmPtr->mutex_slots[slot_index]));
-
     return NULL;
 }
 
@@ -75,8 +80,9 @@ void *factorsParentThread(void *args){
     for (int i = 0; i < 32 && pow(2,i) <= number; i++){
         struct thread_args *f_args = malloc(sizeof(struct thread_args));
 
-        f_args->number = number >> i;
+        f_args->number = number;
         f_args->slot = slot;
+        f_args->factor = number >> i;
 
         if (pthread_create(&threads[i], NULL, factorise, f_args)){
             error("thread create error");
@@ -86,18 +92,13 @@ void *factorsParentThread(void *args){
             error("thread join error");
         }
     }
-
-    printf("Server, thread %d: Factors found for input %d: %d\n", slot, number, ShmPtr->slots[slot]);
     
     sleep(5);
-    ShmPtr->serverflag[slot] = 1;
 
     while (ShmPtr->serverflag[slot] == 1);
 
     pthread_mutex_lock(&assigned_slots_mutex[slot]);
     assigned_slots[slot] = 0;
-    // ShmPtr->numbers[slot] = 0;
-    ShmPtr->slots[slot] = 0;
     pthread_mutex_unlock(&assigned_slots_mutex[slot]);
     
     pthread_mutex_lock(&(ShmPtr->processing_mutex));

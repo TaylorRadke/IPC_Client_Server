@@ -3,7 +3,7 @@ CC = clang
 TARGET = ./bin
 SRC = ./source/
 OUT_NAME = client
-CFLAGS = -I"includes" -lpthread
+CFLAGS = -I"include" -lpthread
 
 server: target ./source
 	$(CC) $(CFLAGS) $(SRC)/client.c -o "$(TARGET)/$(OUT_NAME)" -lrt
