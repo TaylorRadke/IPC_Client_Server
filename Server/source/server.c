@@ -36,6 +36,7 @@ void unlock_server_slot(int);
 void error(char *, char *);
 uint8_t read_client_flag();
 
+
 void error(char *err, char *source){
     printf("*** %s ( Server - %s) %s ***\n", err, source, strerror(errno));
     cleanup();
@@ -70,7 +71,6 @@ uint32_t read_client_number(){
     uint32_t number = ShmPtr->number;
     ShmPtr->client_flag = 0;
     unlock_client();
-
     return number;
 }
 
@@ -78,13 +78,11 @@ uint8_t read_server_slot(int slot){
     lock_server_slot(slot);
     uint8_t flag = ShmPtr->server_flag[slot];
     unlock_server_slot(slot);
-
     return flag;
 }
 
 void notify_request_complete(int slot){
     while (read_server_slot(slot) != 0) usleep(10);
-
     lock_server_slot(slot);
     ShmPtr->server_flag[slot] = 2;
     unlock_server_slot(slot);
@@ -92,7 +90,6 @@ void notify_request_complete(int slot){
 
 void write_factor(int slot, uint32_t factor){
     while (read_server_slot(slot) != 0) usleep(10);
-
     lock_server_slot(slot);
     ShmPtr->slots[slot] = factor;
     ShmPtr->server_flag[slot] = 1;
@@ -140,7 +137,7 @@ void *factorise(void *args){
         if (number % factor == 0){
             number /= factor;
             write_factor(slot, factor);
-            printf("Thread %d, number %d: Found factor %d\n", slot, o_number, factor);
+            printf("Thread [%d] number %d: Found factor %d\n", slot, o_number, factor);
         } else {
             factor += 1;
         }

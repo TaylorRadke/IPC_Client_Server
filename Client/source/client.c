@@ -16,7 +16,6 @@
 
 struct Memory *ShmPtr;
 
-
 void error(char *err, char *source){
     printf("*** %s ( Client - %s) %s ***\n", err, source, strerror(errno));
     exit(1);
@@ -104,14 +103,27 @@ void *listenStdin(){
             printf("exiting...\n");
             exit(0);
         }
+        
+        if (input[0] == '-'){
+            printf("Warning: Negative numbers are not accepted. Please provide a non-negative number.\n");
+            continue;
+        }
 
+        uint32_t number = (uint32_t) strtoul(input, NULL, 10);
+    
+        if (number < 0){
+            printf("Error: Given input exceeds maximum allowed size for a %lu bit integer\n", MAX_BITSIZE);
+            break;
+        }
         if (count_slots_assigned() < MAX_QUERIES){
             while (read_client_flag() != 0) usleep(10);
-            write_client_number(atoi(input));
+            write_client_number(number);
         } else {
             printf("Warning: Server is currently busy\n");
         }
     }
+
+    return NULL;
 }
 
 void *watchServerFlags(void *args){
@@ -122,7 +134,7 @@ void *watchServerFlags(void *args){
                 //New factor for request
                 uint32_t response[2];
                 read_server_slot(i, response);
-                printf("\rClient: Request %d, input %d: %d\n", i, response[1], response[0]);
+                printf("\rClient [%d], input %d: %d\n", i, response[1], response[0]);
             } else if (flag == 2){
                 //Request is complete
                 lock_server_slot(i);
@@ -132,7 +144,7 @@ void *watchServerFlags(void *args){
                 ShmPtr->server_flag[i] = 0;
                 unlock_server_slot(i);
 
-                printf("Request %d complete\t\t%.3lfs\n\n", i, (double) (now - req_time)/1000);
+                printf("Client [%d]: Request complete... %.3lfs\n\n", i, (double) (now - req_time)/1000);
             }
 
             
