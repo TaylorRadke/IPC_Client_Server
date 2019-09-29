@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <semaphore.h>
 #include <math.h>
+#include <time.h>
 
 #include "shmdef.h"
 
@@ -23,26 +24,100 @@ struct thread_args {
     uint32_t factor;
 };
 
-struct read_args {
-    pthread_mutex_t read_mutex;
-};
-
 void INTHandler(int);
 void cleanup(void);
 void listen(struct Memory *);
 void *factorise(void *);
+void write_factor(int index, uint32_t factor);
+void lock_client();
+void unlock_client();
+void lock_server_slot(int);
+void unlock_server_slot(int);
+void error(char *, char *);
+uint8_t read_client_flag();
 
 void error(char *err, char *source){
     printf("*** %s ( Server - %s) %s ***\n", err, source, strerror(errno));
+    cleanup();
     exit(1);
 }
 
-void write_factor(int slot, uint32_t factor){
-    while (ShmPtr->serverflag[slot] != 0);
-    pthread_mutex_lock(&(ShmPtr->server_mutex[slot]));
-    ShmPtr->slots[slot] = factor;
-    ShmPtr->serverflag[slot] = 1;
+uint8_t read_client_flag(){
+    lock_client();
+    uint8_t client_flag = ShmPtr->client_flag;
+    unlock_client();
+    return client_flag;
+}
+
+void lock_server_slot(int slot){ 
+    pthread_mutex_lock(&(ShmPtr->server_mutex[slot])); 
+}
+
+void unlock_server_slot(int slot){ 
     pthread_mutex_unlock(&(ShmPtr->server_mutex[slot]));
+}
+
+void lock_client(){
+    pthread_mutex_lock(&(ShmPtr->client_mutex));
+}
+
+void unlock_client(){
+    pthread_mutex_unlock(&(ShmPtr->client_mutex));
+}
+
+uint32_t read_client_number(){
+    lock_client();
+    uint32_t number = ShmPtr->number;
+    ShmPtr->client_flag = 0;
+    unlock_client();
+
+    return number;
+}
+
+uint8_t read_server_slot(int slot){
+    lock_server_slot(slot);
+    uint8_t flag = ShmPtr->server_flag[slot];
+    unlock_server_slot(slot);
+
+    return flag;
+}
+
+void write_factor(int slot, uint32_t factor){
+    while (read_server_slot(slot) != 0) usleep(10);
+
+    lock_server_slot(slot);
+    ShmPtr->slots[slot] = factor;
+    ShmPtr->server_flag[slot] = 1;
+    unlock_server_slot(slot);
+}
+
+int assign_slot(uint32_t number){
+    int slot;
+    for (int i = 0; i < 10; i++){
+        lock_server_slot(i);
+        int assigned = ShmPtr->assigned[i];
+        unlock_server_slot(i);
+        if (!assigned){
+            slot = i;
+            lock_server_slot(i);
+            ShmPtr->assigned[slot] = 1;
+            ShmPtr->numbers[slot] = number;
+            ShmPtr->timestamps[slot] = ShmPtr->timestamp;
+            unlock_server_slot(i);
+            printf("Assigned slot %d\n", slot);
+            return slot;
+        } 
+    }
+    error("too many running requests", "slot assignment");
+}
+
+void unassign_slot(int slot){
+    while (read_server_slot(slot) != 0) usleep(10);
+
+    lock_server_slot(slot);
+    ShmPtr->assigned[slot] = 0;
+    unlock_server_slot(slot);
+    printf("Unassigned slot %d\n", slot);
 }
 
 void *factorise(void *args){
@@ -89,13 +164,17 @@ void *factorsParentThread(void *args){
         }
 
         if (pthread_join(threads[i], NULL)){
+            free(f_args);
             error("thread join error", "thread");
         }
+
+        free(f_args);
     }
 
-    while (ShmPtr->serverflag[slot] != 0);
+    // unassign_slot(slot);
     return NULL;
 }
+
 
 void cleanup() {
     printf("Destroying Mutexes... ");
@@ -110,6 +189,8 @@ void cleanup() {
     shmctl(ShmID, IPC_RMID, NULL);
     printf(" complete\n");
 }
+
+
 void initiliseShm(void){
     key_t ShmKey;
 
@@ -124,14 +205,15 @@ void initiliseShm(void){
     if ((int) ShmPtr == -1){
         error("shmat error", "shmat");
     }
-
-    ShmPtr->request_complete = -1;
 }
-int main(int argc, char **argv){
-    pthread_t factor_threads[10][32];
-    pthread_t threads[10];
 
+int main(int argc, char **argv){
+    pthread_t threads[10];
+    printf("Starting Server\n");
+    printf("Initialising Shared memory...");
     initiliseShm();
+    printf("complete\n");
+    printf("Server ready\n");
 
     signal(SIGINT, INTHandler);
 
@@ -140,52 +222,19 @@ int main(int argc, char **argv){
     }
 
     while (1){
-        while (ShmPtr->clientflag == 0);
-        printf("%d\n", ShmPtr->clientflag);
-        if (ShmPtr->request_complete == 1) continue;
+        while (read_client_flag() == 0) usleep(10);
 
         uint32_t number, slot;
 
-        pthread_mutex_lock(&(ShmPtr->client_mutex));
-        number = ShmPtr->number;
-        ShmPtr->clientflag = 0;
-        pthread_mutex_unlock(&(ShmPtr->client_mutex));
-    
-        for (int i = 0; i < 10; i++){
-            pthread_mutex_lock(&(ShmPtr->server_mutex[i]));
-            int slot_value = ShmPtr->assigned[i];
+        number = read_client_number();
+        slot = assign_slot(number);
 
-            if (slot_value == 0){
-                slot = i;
-                ShmPtr->assigned[slot] = 1;
-                ShmPtr->numbers[slot] = number;
-                break;
-            }
-            pthread_mutex_unlock(&(ShmPtr->server_mutex[i]));
-        }
-        pthread_mutex_unlock(&(ShmPtr->server_mutex[slot]));
-    
         struct thread_args *args = malloc(sizeof(struct thread_args));
         args->number = number;
         args->slot = slot;
 
         if (pthread_create(&threads[slot], NULL, factorsParentThread, args))
             error("thread create error", "factorsParentThread");
-
-        if (pthread_join(threads[slot], NULL))
-            error("thread join error", "factorsParentThread");
-
-        while (ShmPtr->request_complete != -1);
-
-        pthread_mutex_lock(&(ShmPtr->client_mutex));
-        ShmPtr->request_complete = slot;
-        pthread_mutex_unlock(&(ShmPtr->client_mutex));
-
-        while (ShmPtr->request_complete != -1);
-
-        pthread_mutex_lock(&(ShmPtr->server_mutex[slot]));
-        ShmPtr->assigned[slot] = 0;
-        pthread_mutex_unlock(&(ShmPtr->server_mutex[slot]));
     }
     cleanup();
 }
