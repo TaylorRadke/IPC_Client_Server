@@ -82,6 +82,14 @@ uint8_t read_server_slot(int slot){
     return flag;
 }
 
+void notify_request_complete(int slot){
+    while (read_server_slot(slot) != 0) usleep(10);
+
+    lock_server_slot(slot);
+    ShmPtr->server_flag[slot] = 2;
+    unlock_server_slot(slot);
+}
+
 void write_factor(int slot, uint32_t factor){
     while (read_server_slot(slot) != 0) usleep(10);
 
@@ -109,6 +117,7 @@ int assign_slot(uint32_t number){
         } 
     }
     error("too many running requests", "slot assignment");
+    return -1;
 }
 
 void unassign_slot(int slot){
@@ -171,7 +180,9 @@ void *factorsParentThread(void *args){
         free(f_args);
     }
 
-    // unassign_slot(slot);
+    notify_request_complete(slot);
+    while (read_server_slot(slot) != 0) usleep(10);
+    unassign_slot(slot);
     return NULL;
 }
 
@@ -215,11 +226,12 @@ int main(int argc, char **argv){
     printf("complete\n");
     printf("Server ready\n");
 
-    signal(SIGINT, INTHandler);
-
+    pthread_mutex_init(&(ShmPtr->client_mutex), NULL);
     for (int i = 0; i < 10; i++){
         pthread_mutex_init(&(ShmPtr->server_mutex[i]), NULL);
     }
+
+    signal(SIGINT, INTHandler);
 
     while (1){
         while (read_client_flag() == 0) usleep(10);

@@ -23,9 +23,11 @@ void error(char *err, char *source){
 }
 
 uint64_t get_timestamp(){
-    time_t now;
-    time(&now);
-    return now;
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    uint64_t millis = (now.tv_sec * (uint64_t) 1000) + (now.tv_usec / 1000);
+    return millis;
 }
 
 void lock_client(){
@@ -59,8 +61,6 @@ void write_client_number(uint32_t number){
     ShmPtr->client_flag = 1;
     ShmPtr->timestamp = get_timestamp();
     unlock_client();
-    printf("Sent input\n");
-
 }
 
 uint8_t read_server_flag(int slot){
@@ -109,7 +109,7 @@ void *listenStdin(){
             while (read_client_flag() != 0) usleep(10);
             write_client_number(atoi(input));
         } else {
-            printf("Warning: Server is currently busy at this time\n");
+            printf("Warning: Server is currently busy\n");
         }
     }
 }
@@ -117,25 +117,29 @@ void *listenStdin(){
 void *watchServerFlags(void *args){
     while (1) {
         for (int i = 0; i < 10; i++){
-            if (read_server_flag(i) == 1){
+            uint8_t flag = read_server_flag(i);
+            if (flag == 1){
+                //New factor for request
                 uint32_t response[2];
                 read_server_slot(i, response);
                 printf("\rClient: Server got factor %d for input %d\n", response[0], response[1]);
+            } else if (flag == 2){
+                //Request is complete
+                lock_server_slot(i);
+                uint64_t now = get_timestamp();
+                uint64_t req_time = ShmPtr->timestamps[i];
+                uint32_t number = ShmPtr->numbers[i];
+                ShmPtr->server_flag[i] = 0;
+                unlock_server_slot(i);
+
+                printf("Request %d complete\t\t%.3lfs\n", i, (double) (now - req_time)/1000);
             }
+
+            
         }
+        usleep(10);
     }
 }
-
-// void *watchServerRequestComplete(void *args){
-//     while(1);
-//     // while (1){
-//         // lock_client();
-//         // printf("Client: Server finished request %d for input %d\n", ShmPtr->request_complete, ShmPtr->numbers[ShmPtr->request_complete]);
-//         // ShmPtr->request_complete = -1;
-//         // pthread_mutex_unlock(&(ShmPtr->client_mutex));
-//     // }
-    
-// }
 
 
 int main(int argc, char **argv){
@@ -150,6 +154,7 @@ int main(int argc, char **argv){
         error("shmget error", "shmget");
     
     ShmPtr = (struct Memory *) shmat(ShmID, NULL, 0);
+
     if ((int) ShmPtr == -1)
         error("shmat error", "shmat");
 
@@ -159,20 +164,11 @@ int main(int argc, char **argv){
     if (pthread_create(&serverflag_thread, NULL, watchServerFlags, NULL))
         error("thread create error", "watchServerFlags thread");
 
-
-    // if (pthread_create(&requestcomplete_thread, NULL, watchServerRequestComplete, NULL))
-    //     error("thread create error", "watchRequestComplete thread");
-
     if (pthread_join(input_thread, NULL))
         error("thread join error", "input thread");
 
     if (pthread_join(serverflag_thread, NULL))
         error("thread join error", "server_flag thread");
 
-    // if (pthread_join(requestcomplete_thread, NULL))
-    //     error("thread join error", "requestcomplete thread");
-
-    printf("Client has detached from shared memory\n");
-    printf("Client exits ...\n");
     exit(0);
 }
