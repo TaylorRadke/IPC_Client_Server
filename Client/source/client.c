@@ -80,7 +80,7 @@ void read_server_slot(int slot, uint32_t response[2]){
 
 int count_slots_assigned(){
     int count = 0;
-    for (int i = 0; i < 10; i++){
+    for (int i = 0; i < MAX_QUERIES; i++){
         lock_server_slot(i);
         count += ShmPtr->assigned[i];
         unlock_server_slot(i);
@@ -105,7 +105,7 @@ void *listenStdin(){
             exit(0);
         }
 
-        if (count_slots_assigned() < 10){
+        if (count_slots_assigned() < MAX_QUERIES){
             while (read_client_flag() != 0) usleep(10);
             write_client_number(atoi(input));
         } else {
@@ -116,13 +116,13 @@ void *listenStdin(){
 
 void *watchServerFlags(void *args){
     while (1) {
-        for (int i = 0; i < 10; i++){
+        for (int i = 0; i < MAX_QUERIES; i++){
             uint8_t flag = read_server_flag(i);
             if (flag == 1){
                 //New factor for request
                 uint32_t response[2];
                 read_server_slot(i, response);
-                printf("\rClient: Server got factor %d for input %d\n", response[0], response[1]);
+                printf("\rClient: Request %d, input %d: %d\n", i, response[1], response[0]);
             } else if (flag == 2){
                 //Request is complete
                 lock_server_slot(i);
@@ -132,7 +132,7 @@ void *watchServerFlags(void *args){
                 ShmPtr->server_flag[i] = 0;
                 unlock_server_slot(i);
 
-                printf("Request %d complete\t\t%.3lfs\n", i, (double) (now - req_time)/1000);
+                printf("Request %d complete\t\t%.3lfs\n\n", i, (double) (now - req_time)/1000);
             }
 
             

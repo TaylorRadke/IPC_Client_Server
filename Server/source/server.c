@@ -101,7 +101,7 @@ void write_factor(int slot, uint32_t factor){
 
 int assign_slot(uint32_t number){
     int slot;
-    for (int i = 0; i < 10; i++){
+    for (int i = 0; i < MAX_QUERIES; i++){
         lock_server_slot(i);
         int assigned = ShmPtr->assigned[i];
         unlock_server_slot(i);
@@ -132,16 +132,15 @@ void unassign_slot(int slot){
 void *factorise(void *args){
     struct thread_args *t_args = args;
     uint32_t number = t_args->number;
-    int slot_index = t_args->slot;
+    int slot = t_args->slot;
     uint32_t factor = t_args->factor;
-    
     uint32_t o_number = number;
 
-    while (number > factor && number > 1 && factor > 1){
+    while (number > 1 && factor < number && factor > 1){
         if (number % factor == 0){
             number /= factor;
-            write_factor(slot_index, factor);
-            printf("Thread %d, number %d: Found factor %d\n", slot_index, o_number, factor);
+            write_factor(slot, factor);
+            printf("Thread %d, number %d: Found factor %d\n", slot, o_number, factor);
         } else {
             factor += 1;
         }
@@ -157,11 +156,12 @@ void INTHandler(int sig){
 
 void *factorsParentThread(void *args){
     struct thread_args *t_args = args;
+
     uint32_t number = t_args->number;
     int slot = t_args->slot;
-    pthread_t threads[32];
+    pthread_t threads[MAX_BITSIZE];
 
-    for (int i = 0; i < 32 && pow(2,i) <= number; i++){
+    for (int i = 0; i < MAX_BITSIZE; i++){
         struct thread_args *f_args = malloc(sizeof(struct thread_args));
 
         f_args->number = number;
@@ -189,7 +189,7 @@ void *factorsParentThread(void *args){
 
 void cleanup() {
     printf("Destroying Mutexes... ");
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < MAX_QUERIES; i++)
         pthread_mutex_destroy(&(ShmPtr->server_mutex[i]));
     printf("complete\n");
     
@@ -219,7 +219,7 @@ void initiliseShm(void){
 }
 
 int main(int argc, char **argv){
-    pthread_t threads[10];
+    pthread_t threads[MAX_QUERIES];
     printf("Starting Server\n");
     printf("Initialising Shared memory...");
     initiliseShm();
@@ -227,7 +227,7 @@ int main(int argc, char **argv){
     printf("Server ready\n");
 
     pthread_mutex_init(&(ShmPtr->client_mutex), NULL);
-    for (int i = 0; i < 10; i++){
+    for (int i = 0; i < MAX_QUERIES; i++){
         pthread_mutex_init(&(ShmPtr->server_mutex[i]), NULL);
     }
 

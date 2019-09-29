@@ -4,17 +4,17 @@
 #include <stdint.h>
 #include <pthread.h>
 
-#define EMPTY 0
-#define FILLED 1
+#define MAX_QUERIES 10
+#define MAX_BITSIZE (sizeof(uint32_t) * 8)
 
 struct Memory {
     //Server partition of shared memory
-    pthread_mutex_t server_mutex[10];
-    uint8_t server_flag[10];
-    uint8_t assigned[10];
-    uint32_t numbers[10];
-    uint32_t slots[10];
-    uint64_t timestamps[10];
+    pthread_mutex_t server_mutex[MAX_QUERIES];
+    uint8_t server_flag[MAX_QUERIES];
+    uint8_t assigned[MAX_QUERIES];
+    uint32_t numbers[MAX_QUERIES];
+    uint32_t slots[MAX_QUERIES];
+    uint64_t timestamps[MAX_QUERIES];
 
     //Client partition of shared memory 
     pthread_mutex_t client_mutex;
