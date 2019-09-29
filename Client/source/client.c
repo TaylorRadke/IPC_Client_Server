@@ -78,18 +78,26 @@ void read_server_slot(int slot, uint32_t response[2]){
     unlock_server_slot(slot);
 }
 
+int count_slots_assigned(){
+    int count = 0;
+    for (int i = 0; i < 10; i++){
+        lock_server_slot(i);
+        count += ShmPtr->assigned[i];
+        unlock_server_slot(i);
+    }
+    return count;
+}
+
 void *listenStdin(){
     struct pollfd inputFD;
 
     inputFD.events = POLLIN;
     inputFD.fd = 0;
     char input[256];
-
-    printf("got here\n");
+    
     while (1) {
         bzero(input, strlen(input));
         poll(&inputFD, 1, -1);
-        printf("got input\n");
         scanf("%s", input);
 
         if (input[0] == 'q' || !(strcmp("quit", input))){
@@ -97,12 +105,12 @@ void *listenStdin(){
             exit(0);
         }
 
-        while (read_client_flag() != 0) usleep(10);
-        write_client_number(atoi(input));
-        // if (1 < 10){
-        // } else {
-        //     printf("Warning: Server is currently busy at this time\n");
-        // }
+        if (count_slots_assigned() < 10){
+            while (read_client_flag() != 0) usleep(10);
+            write_client_number(atoi(input));
+        } else {
+            printf("Warning: Server is currently busy at this time\n");
+        }
     }
 }
 
