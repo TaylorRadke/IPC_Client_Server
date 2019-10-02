@@ -137,7 +137,7 @@ void *factorise(void *args){
         if (number % factor == 0){
             number /= factor;
             write_factor(slot, factor);
-            printf("Thread [%d] number %d: Found factor %d\n", slot, o_number, factor);
+            printf("Thread [%d] number %u: Found factor %u\n", slot, o_number, factor);
         } else {
             factor += 1;
         }
@@ -235,7 +235,7 @@ int main(int argc, char **argv){
 
         uint32_t number, slot;
 
-        number = read_client_number();
+        number = read_client_number();       
         slot = assign_slot(number);
 
         struct thread_args *args = malloc(sizeof(struct thread_args));

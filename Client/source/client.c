@@ -109,7 +109,17 @@ void *listenStdin(){
             continue;
         }
 
+        if (strtoul(input, NULL, 10) > UINT32_MAX || strtoul(input, NULL, 10) < 0){
+            printf("Warning: Number is too large, please provide a number less than %u\n", UINT32_MAX);
+            continue;
+        }
+    
         uint32_t number = (uint32_t) strtoul(input, NULL, 10);
+        
+        if (number < 0){
+            printf("Negative number\n");
+        }
+
     
         if (number < 0){
             printf("Error: Given input exceeds maximum allowed size for a %lu bit integer\n", MAX_BITSIZE);
@@ -134,7 +144,7 @@ void *watchServerFlags(void *args){
                 //New factor for request
                 uint32_t response[2];
                 read_server_slot(i, response);
-                printf("\rClient [%d], input %d: %d\n", i, response[1], response[0]);
+                printf("\rClient [%d], input %u: %u\n", i, response[1], response[0]);
             } else if (flag == 2){
                 //Request is complete
                 lock_server_slot(i);
